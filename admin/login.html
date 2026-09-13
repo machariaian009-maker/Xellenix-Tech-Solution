@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login | Xellenix Tech Solution</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<header class="header">
+    <div class="container">
+        <a href="../index.html" class="logo">Xellenix<span>Tech</span></a>
+    </div>
+</header>
+<main>
+    <section class="section" style="padding: 100px 0;">
+        <div class="container" style="max-width: 520px; margin: auto;">
+            <div class="section-heading">
+                <span class="eyebrow">ADMIN LOGIN</span>
+                <h2>Access the Xellenix Lead Dashboard</h2>
+                <p>Login with your admin credentials to manage leads and customer requests.</p>
+            </div>
+            <form id="adminLoginForm" class="request-form">
+                <div>
+                    <label for="adminEmail">Email Address</label>
+                    <input type="email" id="adminEmail" name="email" placeholder="admin@xellenixtech.com" required>
+                </div>
+                <div>
+                    <label for="adminPassword">Password</label>
+                    <input type="password" id="adminPassword" name="password" placeholder="Enter password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top:20px; width:100%;">Login</button>
+            </form>
+            <div id="adminError" class="form-success" role="alert" hidden style="background:#fde2e2;color:#7f1d1d;border:1px solid #f43f5e;">
+                <p id="adminErrorText"></p>
+            </div>
+        </div>
+    </section>
+</main>
+<script src="../js/config.js"></script>
+<script>
+    const existingToken = localStorage.getItem('xellenix_admin_token');
+    if (existingToken) {
+        window.location.href = 'dashboard.html';
+    }
+
+    document.getElementById('adminLoginForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const email = document.getElementById('adminEmail').value.trim();
+        const password = document.getElementById('adminPassword').value;
+        const errorContainer = document.getElementById('adminError');
+        const errorText = document.getElementById('adminErrorText');
+
+        errorContainer.hidden = true;
+        errorText.textContent = '';
+
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/api/admin/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Login failed.');
+            }
+
+            localStorage.setItem('xellenix_admin_token', data.token);
+            window.location.href = 'dashboard.html';
+        } catch (error) {
+            errorText.textContent = error.message;
+            errorContainer.hidden = false;
+        }
+    });
+</script>
+</body>
+</html>

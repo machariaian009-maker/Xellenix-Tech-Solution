@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | Xellenix Tech Solution</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<header class="header">
+    <div class="container" style="display:flex; justify-content:space-between; align-items:center;">
+        <a href="../index.html" class="logo">Xellenix<span>Tech</span></a>
+        <button id="logoutButton" class="btn btn-secondary" style="font-weight:700;">Logout</button>
+    </div>
+</header>
+<main>
+    <section class="section" style="padding: 40px 0;">
+        <div class="container">
+            <div class="section-heading">
+                <span class="eyebrow">ADMIN DASHBOARD</span>
+                <h2>Lead Management</h2>
+                <p>Manage customer website requests, update statuses, and add notes.</p>
+            </div>
+            <div id="dashboardStats" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:24px;"></div>
+            <div style="margin-bottom:24px; display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+                <input id="searchInput" type="search" placeholder="Search leads..." style="flex:1; padding:12px 14px; border-radius:14px; border:1px solid #ccc;">
+                <select id="statusFilter" style="padding:12px 14px; border-radius:14px; border:1px solid #ccc;">
+                    <option value="">All statuses</option>
+                    <option>New</option>
+                    <option>Contacted</option>
+                    <option>In Progress</option>
+                    <option>Completed</option>
+                    <option>Cancelled</option>
+                </select>
+                <button id="refreshButton" class="btn btn-primary">Refresh</button>
+                <button id="exportCsvButton" class="btn btn-secondary">Export CSV</button>
+            </div>
+            <div id="adminError" class="form-success" role="alert" hidden style="background:#fde2e2;color:#7f1d1d;border:1px solid #f43f5e; margin-bottom:18px;"></div>
+            <div style="overflow-x:auto;">
+                <table id="requestsTable" style="width:100%; border-collapse:collapse; min-width:920px;">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Customer</th>
+                            <th>Business</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Type</th>
+                            <th>Package</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="pagination" style="margin-top:16px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;"></div>
+            <div id="requestDetailsPanel" style="margin-top:24px; display:none; background:#ffffff; border-radius:24px; box-shadow:0 12px 30px rgba(0,0,0,0.08); padding:24px;">
+                <h3 style="margin-top:0;">Lead Details</h3>
+                <div id="requestDetailsContent" style="display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:20px;"></div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; align-items:start;">
+                    <div>
+                        <label for="detailStatus">Update Status</label>
+                        <select id="detailStatus" style="width:100%; padding:12px 14px; border-radius:14px; border:1px solid #ccc; margin-top:8px;">
+                            <option>New</option>
+                            <option>Contacted</option>
+                            <option>In Progress</option>
+                            <option>Completed</option>
+                            <option>Cancelled</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="detailNotes">Notes</label>
+                        <textarea id="detailNotes" rows="4" style="width:100%; padding:12px 14px; border-radius:14px; border:1px solid #ccc; margin-top:8px;"></textarea>
+                    </div>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:12px;">
+                    <button id="saveDetailsButton" class="btn btn-primary">Save Changes</button>
+                    <button id="deleteRequestButton" class="btn btn-danger">Delete Request</button>
+                    <button id="closeDetailsButton" class="btn btn-secondary">Close Details</button>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+<script src="../js/config.js"></script>
+<script>
+    const adminToken = localStorage.getItem('xellenix_admin_token');
+    const errorElement = document.getElementById('adminError');
+    const tableBody = document.querySelector('#requestsTable tbody');
+    const statsContainer = document.getElementById('dashboardStats');
+    const detailsPanel = document.getElementById('requestDetailsPanel');
+    const detailsContent = document.getElementById('requestDetailsContent');
+    const detailStatus = document.getElementById('detailStatus');
+    const detailNotes = document.getElementById('detailNotes');
+    const saveDetailsButton = document.getElementById('saveDetailsButton');
+    const deleteRequestButton = document.getElementById('deleteRequestButton');
+    const closeDetailsButton = document.getElementById('closeDetailsButton');
+
+    let selectedRequestId = null;
+    let currentPage = 1;
+    const pageLimit = 20;
+    let totalItems = 0;
+
+    function showError(message) {
+        errorElement.textContent = message;
+        errorElement.hidden = false;
+    }
+
+    function clearError() {
+        errorElement.hidden = true;
+        errorElement.textContent = '';
+    }
+
+    function createCell(text) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        return td;
+    }
+
+    function renderStats(data) {
+        statsContainer.innerHTML = '';
+        const statCards = [
+            { label: 'Total Leads', value: data.total },
+            { label: 'New Leads', value: data.statusCounts['New'] || 0 },
+            { label: 'Contacted', value: data.statusCounts['Contacted'] || 0 },
+            { label: 'In Progress', value: data.statusCounts['In Progress'] || 0 },
+            { label: 'Completed', value: data.statusCounts['Completed'] || 0 },
+            { label: 'Cancelled', value: data.statusCounts['Cancelled'] || 0 }
+        ];
+
+        statCards.forEach(card => {
+            const box = document.createElement('div');
+            box.style.padding = '24px';
+            box.style.borderRadius = '20px';
+            box.style.background = '#ffffff';
+            box.style.boxShadow = '0 12px 30px rgba(0,0,0,0.07)';
+
+            const valueEl = document.createElement('strong');
+            valueEl.style.display = 'block';
+            valueEl.style.fontSize = '1.5rem';
+            valueEl.style.marginBottom = '8px';
+            valueEl.textContent = String(card.value);
+
+            const labelEl = document.createElement('span');
+            labelEl.style.color = '#5a5a5a';
+            labelEl.textContent = card.label;
+
+            box.appendChild(valueEl);
+            box.appendChild(labelEl);
+            statsContainer.appendChild(box);
+        });
+    }
+
+    async function fetchRequests(page = 1) {
+        clearError();
+
+        if (!adminToken) {
+            window.location.href = 'login.html';
+            return;
+        }
+
+        const status = document.getElementById('statusFilter').value;
+        const search = document.getElementById('searchInput').value.trim();
+
+        const params = new URLSearchParams();
+        if (status) params.set('status', status);
+        if (search) params.set('search', search);
+        params.set('page', String(page));
+        params.set('limit', String(pageLimit));
+
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/api/requests?${params.toString()}`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            if (response.status === 401) {
+                localStorage.removeItem('xellenix_admin_token');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Unable to load requests.');
+            }
+            currentPage = data.page || page;
+            totalItems = data.total || 0;
+
+            renderTable(data.results);
+            renderStats({ total: data.total, statusCounts: data.statusCounts || aggregateStatusCounts(data.results) });
+            renderPagination();
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
+    function renderPagination() {
+        const pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+
+        const totalPages = Math.max(1, Math.ceil(totalItems / pageLimit));
+
+        const prev = document.createElement('button');
+        prev.textContent = 'Previous';
+        prev.className = 'btn btn-secondary';
+        prev.disabled = currentPage <= 1;
+        prev.addEventListener('click', () => { if (currentPage > 1) { currentPage--; fetchRequests(currentPage); } });
+        pagination.appendChild(prev);
+
+        // show up to 7 page buttons centered around current
+        const start = Math.max(1, currentPage - 3);
+        const end = Math.min(totalPages, currentPage + 3);
+        for (let p = start; p <= end; p++) {
+            const btn = document.createElement('button');
+            btn.textContent = String(p);
+            btn.className = p === currentPage ? 'btn btn-primary' : 'btn btn-secondary';
+            btn.addEventListener('click', () => { currentPage = p; fetchRequests(p); });
+            pagination.appendChild(btn);
+        }
+
+        const next = document.createElement('button');
+        next.textContent = 'Next';
+        next.className = 'btn btn-secondary';
+        next.disabled = currentPage >= totalPages;
+        next.addEventListener('click', () => { if (currentPage < totalPages) { currentPage++; fetchRequests(currentPage); } });
+        pagination.appendChild(next);
+
+        const info = document.createElement('div');
+        info.style.marginLeft = '12px';
+        info.textContent = `Page ${currentPage} of ${totalPages} — ${totalItems} results`;
+        pagination.appendChild(info);
+    }
+
+    function aggregateStatusCounts(requests) {
+        return requests.reduce((counts, request) => {
+            counts[request.status] = (counts[request.status] || 0) + 1;
+            return counts;
+        }, {});
+    }
+
+    function renderTable(rows) {
+        tableBody.innerHTML = '';
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.appendChild(createCell(row.id));
+            tr.appendChild(createCell(row.fullName));
+            tr.appendChild(createCell(row.businessName));
+            tr.appendChild(createCell(row.email));
+            tr.appendChild(createCell(row.phone));
+            tr.appendChild(createCell(row.businessType));
+            tr.appendChild(createCell(row.websitePackage));
+            tr.appendChild(createCell(row.status));
+            tr.appendChild(createCell(new Date(row.createdAt).toLocaleString()));
+
+            const actions = document.createElement('td');
+            const viewButton = document.createElement('button');
+            viewButton.textContent = 'View';
+            viewButton.className = 'btn btn-secondary';
+            viewButton.style.marginRight = '8px';
+            viewButton.addEventListener('click', () => showRequestDetails(row.id));
+
+            actions.appendChild(viewButton);
+            const csvBtn = document.createElement('button');
+            csvBtn.textContent = 'Export';
+            csvBtn.className = 'btn btn-secondary';
+            csvBtn.style.marginLeft = '6px';
+            csvBtn.addEventListener('click', () => exportSingleRequest(row.id));
+            actions.appendChild(csvBtn);
+            tr.appendChild(actions);
+            tableBody.appendChild(tr);
+        });
+    }
+
+    function renderRequestDetails(request) {
+        selectedRequestId = request.id;
+        detailsPanel.style.display = 'block';
+        detailStatus.value = request.status;
+        detailNotes.value = request.notes || '';
+
+        // Clear existing content
+        detailsContent.innerHTML = '';
+
+        function addDetail(label, value, fullWidth) {
+            const wrapper = document.createElement('div');
+            if (fullWidth) wrapper.style.gridColumn = '1 / -1';
+
+            const strong = document.createElement('strong');
+            strong.textContent = label;
+
+            const p = document.createElement('p');
+            p.textContent = value === null || value === undefined ? '' : String(value);
+            if (label === 'Message') p.style.whiteSpace = 'pre-wrap';
+
+            wrapper.appendChild(strong);
+            wrapper.appendChild(p);
+            detailsContent.appendChild(wrapper);
+        }
+
+        addDetail('ID', request.id);
+        addDetail('Customer', request.fullName);
+        addDetail('Business', request.businessName);
+        addDetail('Email', request.email);
+        addDetail('Phone', request.phone);
+        addDetail('Type', request.businessType);
+        addDetail('Package', request.websitePackage);
+        addDetail('Message', request.message || '', true);
+    }
+
+    async function showRequestDetails(id) {
+        clearError();
+
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/api/requests/${id}`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Unable to load request.');
+            }
+
+            renderRequestDetails(data.request);
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
+    async function exportSingleRequest(id) {
+        clearError();
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/api/requests/${id}`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message || 'Unable to fetch request.');
+
+            const r = data.request;
+            const csvContent = ['ID,Customer,Business,Email,Phone,Type,Package,Status,Notes,Message,Created At'].join(',') + '\n' +
+                `"${r.id}","${r.fullName.replace(/"/g,'""')}","${r.businessName.replace(/"/g,'""')}","${r.email}","${r.phone}","${r.businessType}","${r.websitePackage}","${r.status}","${(r.notes||'').replace(/"/g,'""')}","${(r.message||'').replace(/"/g,'""')}","${r.createdAt}"`;
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `request_${r.id}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            showError(err.message || 'Unable to export request');
+        }
+    }
+
+    async function updateRequest() {
+        clearError();
+        if (!selectedRequestId) {
+            showError('Select a lead before saving changes.');
+            return;
+        }
+
+        const payload = {
+            status: detailStatus.value,
+            notes: detailNotes.value.trim()
+        };
+
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/api/requests/${selectedRequestId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${adminToken}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Unable to save changes.');
+            }
+
+            fetchRequests();
+            showError('Lead updated successfully.');
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
+    async function deleteRequest() {
+        clearError();
+        if (!selectedRequestId) {
+            showError('Select a lead before deleting.');
+            return;
+        }
+
+        const confirmation = confirm('Delete this request permanently? This cannot be undone.');
+        if (!confirmation) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/api/requests/${selectedRequestId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Unable to delete request.');
+            }
+
+            selectedRequestId = null;
+            detailsPanel.style.display = 'none';
+            fetchRequests();
+            showError('Lead deleted successfully.');
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
+    closeDetailsButton.addEventListener('click', () => {
+        selectedRequestId = null;
+        detailsPanel.style.display = 'none';
+    });
+    saveDetailsButton.addEventListener('click', updateRequest);
+    deleteRequestButton.addEventListener('click', deleteRequest);
+
+    document.getElementById('refreshButton').addEventListener('click', fetchRequests);
+    document.getElementById('exportCsvButton').addEventListener('click', async function() {
+        clearError();
+        try {
+            const status = document.getElementById('statusFilter').value;
+            const search = document.getElementById('searchInput').value.trim();
+            const params = new URLSearchParams();
+            if (status) params.set('status', status);
+            if (search) params.set('search', search);
+            params.set('limit', String(10000));
+
+            const response = await fetch(`${window.API_BASE_URL}/api/requests/export.csv?${params.toString()}`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.message || 'Unable to export CSV');
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `xellenix_requests_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            showError(err.message || 'Failed to export CSV');
+        }
+    });
+    document.getElementById('logoutButton').addEventListener('click', () => {
+        localStorage.removeItem('xellenix_admin_token');
+        window.location.href = 'login.html';
+    });
+
+    fetchRequests();
+</script>
+</body>
+</html>
